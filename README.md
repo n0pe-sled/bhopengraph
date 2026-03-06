@@ -129,6 +129,73 @@ This gives us the following [Minimal Working JSON](https://bloodhound.specterops
 }
 ```
 
+## Custom Node Icons
+
+bhopengraph includes a `BloodHoundClient` that can authenticate to a BloodHound instance and manage custom node icons. Authentication uses HMAC-signed requests with a token ID and token key pair generated in the BloodHound UI.
+
+### Icons JSON format
+
+The icons file mirrors the BloodHound API format. Each entry has a `kindName` and a `config` containing a Font Awesome icon definition:
+
+```json
+{
+  "custom_nodes": [
+    {
+      "kindName": "CustomNodeType",
+      "config": {
+        "icon": {
+          "type": "font-awesome",
+          "name": "circle",
+          "color": "#17A2B8"
+        }
+      }
+    }
+  ]
+}
+```
+
+A generic template is provided in [`icons.json`](icons.json) and a more complete AWS example in [`icons-example.json`](icons-example.json).
+
+### CLI usage
+
+Upload icons directly from the command line:
+
+```bash
+python -m bhopengraph upload-icons \
+  --url https://your-bloodhound-instance.example.com \
+  --token-id <TOKEN_ID> \
+  --token-key '<TOKEN_KEY>' \
+  --icons-file icons.json
+```
+
+Add `--json` for JSON output.
+
+### Python usage
+
+```py
+from bhopengraph import BloodHoundClient
+
+client = BloodHoundClient(
+    base_url="https://your-bloodhound-instance.example.com",
+    token_id="<TOKEN_ID>",
+    token_key="<TOKEN_KEY>"
+)
+
+# Upload from file (upserts: updates existing, creates new)
+results = client.upload_icons_from_file("icons.json")
+
+# Or load and upload separately
+icons = BloodHoundClient.load_icons_from_file("icons.json")
+results = client.upload_icons(icons)
+
+# Individual CRUD operations
+nodes = client.get_custom_nodes()
+node = client.get_custom_node("CustomNodeType")
+client.create_custom_node("NewType", {"type": "font-awesome", "name": "star", "color": "#FFD700"})
+client.update_custom_node("NewType", {"type": "font-awesome", "name": "star", "color": "#FF0000"})
+client.delete_custom_node("NewType")
+```
+
 ## Contributing
 
 Pull requests are welcome. Feel free to open an issue if you want to add other features.
