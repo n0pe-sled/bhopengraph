@@ -13,11 +13,13 @@ from urllib.request import Request, urlopen
 
 class BloodHoundClientError(Exception):
     """Base exception for BloodHoundClient errors."""
+
     pass
 
 
 class BloodHoundAuthError(BloodHoundClientError):
     """Raised on 401/403 authentication/authorization failures."""
+
     pass
 
 
@@ -67,7 +69,9 @@ class BloodHoundClient:
             "Signature": signature,
         }
 
-    def _request(self, method: str, path: str, body: dict = None) -> dict:
+    def _request(
+        self, method: str, path: str, body: dict = None, extra_headers: dict = None
+    ) -> dict:
         """Make an authenticated HTTP request to the BloodHound API."""
         uri = path if path.startswith("/") else f"/{path}"
         url = self.base_url + uri
@@ -79,6 +83,8 @@ class BloodHoundClient:
         headers = self._sign_request(method, uri, body_bytes)
         headers["Content-Type"] = "application/json"
         headers["Accept"] = "application/json"
+        if extra_headers:
+            headers.update(extra_headers)
 
         req = Request(url, data=body_bytes, headers=headers, method=method.upper())
 
@@ -127,6 +133,153 @@ class BloodHoundClient:
         """Delete a custom node type."""
         return self._request("DELETE", f"/api/v2/custom-nodes/{kind_name}")
 
+    # --- Extension management ---
+
+    def list_extensions(self) -> list:
+        """List all schema extensions.
+
+        Returns:
+            list: List of extension dicts with keys: id, name, version, is_builtin.
+        """
+        response = self._request("GET", "/api/v2/extensions")
+        extensions = response.get("data", {}).get("extensions", [])
+        return [
+            {
+                "id": int(ext["id"]),
+                "name": ext["name"],
+                "version": ext["version"],
+                "is_builtin": ext.get("is_builtin", False),
+            }
+            for ext in extensions
+        ]
+
+    def upsert_schema_extension(self, schema: dict) -> dict:
+        """Create or update a schema extension.
+
+        Args:
+            schema (dict): OpenGraph schema definition containing schema,
+                node_kinds, relationship_kinds, environments, and
+                relationship_findings.
+
+        Returns:
+            dict: API response.
+        """
+        return self._request("PUT", "/api/v2/extensions", body=schema)
+
+    def delete_extension(self, extension_id: int) -> dict:
+        """Delete a schema extension by ID.
+
+        Args:
+            extension_id (int): The extension ID to delete.
+
+        Returns:
+            dict: API response.
+        """
+        return self._request("DELETE", f"/api/v2/extensions/{extension_id}")
+
+    # --- Source kind management ---
+
+    def list_source_kinds(self) -> list:
+        """List all source kinds.
+
+        Returns:
+            list: List of source kind dicts with keys: id, name.
+        """
+        response = self._request("GET", "/api/v2/graphs/source-kinds")
+        kinds = response.get("data", {}).get("kinds", [])
+        return [{"id": int(k["id"]), "name": k["name"]} for k in kinds]
+
+    def delete_source_kind_data(self, source_kind_ids: list) -> dict:
+        """Delete data for the given source kind IDs.
+
+        Args:
+            source_kind_ids (list): List of integer source kind IDs to clear.
+
+        Returns:
+            dict: API response.
+        """
+        return self._request(
+            "POST",
+            "/api/v2/clear-database",
+            body={"deleteSourceKinds": source_kind_ids},
+        )
+
+    # --- Graph upload / ingest ---
+
+    def upload_graph(
+        self, graph_data: dict, file_name: str = "opengraph-ingest.json"
+    ) -> int:
+        """Upload an OpenGraph JSON payload to BloodHound via the file-upload API.
+
+        This follows the three-step ingest protocol:
+        1. POST /api/v2/file-upload/start  — create an upload job
+        2. POST /api/v2/file-upload/{id}   — send the JSON payload
+        3. POST /api/v2/file-upload/{id}/end — finalise the job
+
+        Args:
+            graph_data (dict): The graph payload dict (must contain a "graph" key
+                with "nodes" and "edges"). Typically produced by
+                ``OpenGraph.export_to_dict()``.
+            file_name (str): Filename hint sent via X-File-Upload-Name header.
+
+        Returns:
+            int: The ingest job ID.
+
+        Raises:
+            BloodHoundAPIError: If any step of the upload fails.
+            ValueError: If the job ID returned by the server is invalid.
+        """
+        # Step 1: start the upload job
+        start_response = self._request("POST", "/api/v2/file-upload/start")
+        try:
+            job_id = int(start_response.get("data", {}).get("id", 0))
+        except (TypeError, ValueError):
+            job_id = 0
+        if not job_id:
+            raise ValueError("BloodHound returned an invalid ingest job ID.")
+
+        # Step 2: upload the payload
+        upload_error = None
+        try:
+            self._request(
+                "POST",
+                f"/api/v2/file-upload/{job_id}",
+                body=graph_data,
+                extra_headers={"X-File-Upload-Name": file_name},
+            )
+        except Exception as e:
+            upload_error = e
+            raise
+        finally:
+            # Step 3: always end the upload job
+            try:
+                self._request("POST", f"/api/v2/file-upload/{job_id}/end")
+            except Exception as end_error:
+                if upload_error is None:
+                    raise end_error
+
+        return job_id
+
+    def upload_graph_from_file(self, filepath: str, file_name: str = None) -> int:
+        """Load graph JSON from a file and upload it to BloodHound.
+
+        Args:
+            filepath (str): Path to the JSON file.
+            file_name (str): Optional filename hint. Defaults to the basename of filepath.
+
+        Returns:
+            int: The ingest job ID.
+        """
+        import os
+
+        with open(filepath, "r") as f:
+            graph_data = json.load(f)
+        if file_name is None:
+            file_name = os.path.basename(filepath)
+        return self.upload_graph(graph_data, file_name=file_name)
+
+    # --- Icon management ---
+
     def upload_icons(self, icons_config: dict) -> list:
         """Upload icons from config dict. Upsert: tries PUT first, POST on 404.
 
@@ -141,11 +294,15 @@ class BloodHoundClient:
             icon_config = entry["config"]["icon"]
             try:
                 result = self.update_custom_node(kind_name, icon_config)
-                results.append({"kind": kind_name, "action": "updated", "result": result})
+                results.append(
+                    {"kind": kind_name, "action": "updated", "result": result}
+                )
             except BloodHoundAPIError as e:
                 if e.status_code == 404:
                     result = self.create_custom_node(kind_name, icon_config)
-                    results.append({"kind": kind_name, "action": "created", "result": result})
+                    results.append(
+                        {"kind": kind_name, "action": "created", "result": result}
+                    )
                 else:
                     raise
         return results
@@ -162,4 +319,6 @@ class BloodHoundClient:
             return json.load(f)
 
     def __repr__(self):
-        return f"BloodHoundClient(base_url='{self.base_url}', token_id='{self.token_id}')"
+        return (
+            f"BloodHoundClient(base_url='{self.base_url}', token_id='{self.token_id}')"
+        )

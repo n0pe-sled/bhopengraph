@@ -129,6 +129,100 @@ This gives us the following [Minimal Working JSON](https://bloodhound.specterops
 }
 ```
 
+## Uploading Graphs to BloodHound
+
+bhopengraph can upload OpenGraph JSON directly to a BloodHound instance using the [file-upload ingest API](https://bloodhound.specterops.io/opengraph/api). Authentication uses HMAC-signed requests with a token ID and token key pair generated in the BloodHound UI.
+
+An example graph file ready for upload is provided in [`examples/example_upload.json`](examples/example_upload.json).
+
+### Upload a graph built in Python
+
+```py
+from bhopengraph import OpenGraph, BloodHoundClient, Node, Edge, Properties
+
+# Build a graph
+graph = OpenGraph(source_kind="Base")
+graph.add_node(Node("user-001", kinds=["Person", "Base"], properties=Properties(displayname="alice", name="ALICE", objectid="user-001")))
+graph.add_node(Node("server-001", kinds=["Server", "Base"], properties=Properties(displayname="web-server", name="WEB-SERVER", objectid="server-001")))
+graph.add_edge(Edge("user-001", "server-001", "HasSession"))
+
+# Upload directly
+client = BloodHoundClient(
+    base_url="https://your-bloodhound-instance.example.com",
+    token_id="<TOKEN_ID>",
+    token_key="<TOKEN_KEY>"
+)
+job_id = graph.upload(client)
+print(f"Upload complete, job ID: {job_id}")
+```
+
+### Upload a JSON file
+
+```py
+from bhopengraph import BloodHoundClient
+
+client = BloodHoundClient(
+    base_url="https://your-bloodhound-instance.example.com",
+    token_id="<TOKEN_ID>",
+    token_key="<TOKEN_KEY>"
+)
+
+# Upload from a file on disk
+job_id = client.upload_graph_from_file("examples/example_upload.json")
+
+# Or load and upload a dict directly
+import json
+with open("examples/example_upload.json") as f:
+    graph_data = json.load(f)
+job_id = client.upload_graph(graph_data, file_name="my-graph.json")
+```
+
+### CLI usage
+
+Upload a graph JSON file from the command line:
+
+```bash
+python -m bhopengraph upload-graph \
+  --url https://your-bloodhound-instance.example.com \
+  --token-id <TOKEN_ID> \
+  --token-key '<TOKEN_KEY>' \
+  --file examples/example_upload.json
+```
+
+## Schema Extensions & Source Kinds
+
+The `BloodHoundClient` also supports managing schema extensions and source kinds:
+
+```py
+from bhopengraph import BloodHoundClient
+
+client = BloodHoundClient(
+    base_url="https://your-bloodhound-instance.example.com",
+    token_id="<TOKEN_ID>",
+    token_key="<TOKEN_KEY>"
+)
+
+# List and manage schema extensions
+extensions = client.list_extensions()
+client.upsert_schema_extension({
+    "schema": {
+        "name": "my-extension",
+        "display_name": "My Extension",
+        "version": "1.0.0",
+        "namespace": "my-ext"
+    },
+    "node_kinds": [...],
+    "relationship_kinds": [...],
+    "environments": [...],
+    "relationship_findings": [...]
+})
+client.delete_extension(extension_id=1)
+
+# List and manage source kinds
+source_kinds = client.list_source_kinds()
+client.delete_source_kind_data(source_kind_ids=[3])
+```
+
 ## Custom Node Icons
 
 bhopengraph includes a `BloodHoundClient` that can authenticate to a BloodHound instance and manage custom node icons. Authentication uses HMAC-signed requests with a token ID and token key pair generated in the BloodHound UI.
