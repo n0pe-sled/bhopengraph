@@ -278,6 +278,28 @@ class BloodHoundClient:
             file_name = os.path.basename(filepath)
         return self.upload_graph(graph_data, file_name=file_name)
 
+    # --- Cypher queries ---
+
+    def cypher_query(self, query: str, include_properties: bool = True) -> dict:
+        """Execute a Cypher query against the BloodHound instance.
+
+        Args:
+            query (str): The Cypher query string to execute.
+            include_properties (bool): Whether to include node/edge properties
+                in the response. Defaults to True.
+
+        Returns:
+            dict: Raw JSON response from the API.
+
+        Raises:
+            BloodHoundAPIError: If the query fails.
+        """
+        payload = {
+            "query": query,
+            "include_properties": include_properties,
+        }
+        return self._request("POST", "/api/v2/graphs/cypher", body=payload)
+
     # --- Icon management ---
 
     def upload_icons(self, icons_config: dict) -> list:

@@ -189,6 +189,30 @@ python -m bhopengraph upload-graph \
   --file examples/example_upload.json
 ```
 
+## Cypher Queries
+
+You can execute Cypher queries directly against a BloodHound instance and get raw JSON results:
+
+```py
+from bhopengraph import BloodHoundClient
+
+client = BloodHoundClient(
+    base_url="https://your-bloodhound-instance.example.com",
+    token_id="<TOKEN_ID>",
+    token_key="<TOKEN_KEY>"
+)
+
+# Run a Cypher query and get raw JSON results
+result = client.cypher_query("MATCH (n:User) RETURN n LIMIT 10")
+print(result)
+
+# Query relationships
+result = client.cypher_query("MATCH (u:User)-[r:AdminTo]->(c:Computer) RETURN u, r, c")
+
+# Exclude properties for lighter responses
+result = client.cypher_query("MATCH (n) RETURN n LIMIT 5", include_properties=False)
+```
+
 ## Schema Extensions & Source Kinds
 
 The `BloodHoundClient` also supports managing schema extensions and source kinds:

@@ -185,6 +185,34 @@ generated in the BloodHound UI.
      --token-key '<TOKEN_KEY>' \
      --file my_graph.json
 
+Running Cypher Queries
+----------------------
+
+You can execute Cypher queries directly against a BloodHound instance and get
+raw JSON results:
+
+.. code-block:: python
+
+   from bhopengraph import BloodHoundClient
+
+   client = BloodHoundClient(
+       base_url="https://your-bloodhound-instance.example.com",
+       token_id="<TOKEN_ID>",
+       token_key="<TOKEN_KEY>"
+   )
+
+   # Run a Cypher query and get raw JSON results
+   result = client.cypher_query("MATCH (n:User) RETURN n LIMIT 10")
+   print(result)
+
+   # Query relationships
+   result = client.cypher_query(
+       "MATCH (u:User)-[r:AdminTo]->(c:Computer) RETURN u, r, c"
+   )
+
+   # Exclude properties for lighter responses
+   result = client.cypher_query("MATCH (n) RETURN n LIMIT 5", include_properties=False)
+
 Managing Schema Extensions
 --------------------------
 

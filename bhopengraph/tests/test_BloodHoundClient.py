@@ -95,24 +95,24 @@ class TestBloodHoundClientRequests(unittest.TestCase):
 
     @patch("bhopengraph.BloodHoundClient.urlopen")
     def test_get_custom_nodes(self, mock_urlopen):
-        expected = {"data": [{"name": "AWSUser"}]}
+        expected = {"data": [{"name": "AWS_User"}]}
         mock_urlopen.return_value = self._mock_response(expected)
         result = self.client.get_custom_nodes()
         self.assertEqual(result, expected)
 
     @patch("bhopengraph.BloodHoundClient.urlopen")
     def test_get_custom_node(self, mock_urlopen):
-        expected = {"name": "AWSUser", "icon": {"type": "font-awesome"}}
+        expected = {"name": "AWS_User", "icon": {"type": "font-awesome"}}
         mock_urlopen.return_value = self._mock_response(expected)
-        result = self.client.get_custom_node("AWSUser")
+        result = self.client.get_custom_node("AWS_User")
         self.assertEqual(result, expected)
 
     @patch("bhopengraph.BloodHoundClient.urlopen")
     def test_create_custom_node(self, mock_urlopen):
-        expected = {"name": "AWSUser"}
+        expected = {"name": "AWS_User"}
         mock_urlopen.return_value = self._mock_response(expected)
         icon = {"type": "font-awesome", "name": "user", "color": "#3B48CC"}
-        result = self.client.create_custom_node("AWSUser", icon)
+        result = self.client.create_custom_node("AWS_User", icon)
         self.assertEqual(result, expected)
         # Verify POST method
         req = mock_urlopen.call_args[0][0]
@@ -120,10 +120,10 @@ class TestBloodHoundClientRequests(unittest.TestCase):
 
     @patch("bhopengraph.BloodHoundClient.urlopen")
     def test_update_custom_node(self, mock_urlopen):
-        expected = {"name": "AWSUser"}
+        expected = {"name": "AWS_User"}
         mock_urlopen.return_value = self._mock_response(expected)
         icon = {"type": "font-awesome", "name": "user", "color": "#3B48CC"}
-        result = self.client.update_custom_node("AWSUser", icon)
+        result = self.client.update_custom_node("AWS_User", icon)
         self.assertEqual(result, expected)
         req = mock_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "PUT")
@@ -132,7 +132,7 @@ class TestBloodHoundClientRequests(unittest.TestCase):
     def test_delete_custom_node(self, mock_urlopen):
         expected = {}
         mock_urlopen.return_value = self._mock_response(expected)
-        result = self.client.delete_custom_node("AWSUser")
+        result = self.client.delete_custom_node("AWS_User")
         self.assertEqual(result, expected)
         req = mock_urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "DELETE")
@@ -364,6 +364,67 @@ class TestBloodHoundClientGraphUpload(unittest.TestCase):
         self.assertEqual(mock_urlopen.call_count, 3)
 
 
+class TestBloodHoundClientCypherQuery(unittest.TestCase):
+    """Test Cypher query method."""
+
+    def setUp(self):
+        self.client = BloodHoundClient(
+            "https://bh.example.com", "tid", "test-secret-key"
+        )
+
+    def _mock_response(self, data, status=200):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(data).encode("utf-8")
+        mock_resp.status = status
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        return mock_resp
+
+    @patch("bhopengraph.BloodHoundClient.urlopen")
+    def test_cypher_query_sends_post(self, mock_urlopen):
+        expected = {"data": {"nodes": {}, "edges": []}}
+        mock_urlopen.return_value = self._mock_response(expected)
+        result = self.client.cypher_query("MATCH (n) RETURN n LIMIT 10")
+        self.assertEqual(result, expected)
+        req = mock_urlopen.call_args[0][0]
+        self.assertEqual(req.get_method(), "POST")
+        self.assertIn("/api/v2/graphs/cypher", req.full_url)
+
+    @patch("bhopengraph.BloodHoundClient.urlopen")
+    def test_cypher_query_sends_query_in_body(self, mock_urlopen):
+        mock_urlopen.return_value = self._mock_response({"data": {}})
+        self.client.cypher_query("MATCH (n:User) RETURN n")
+        req = mock_urlopen.call_args[0][0]
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertEqual(body["query"], "MATCH (n:User) RETURN n")
+        self.assertTrue(body["include_properties"])
+
+    @patch("bhopengraph.BloodHoundClient.urlopen")
+    def test_cypher_query_include_properties_false(self, mock_urlopen):
+        mock_urlopen.return_value = self._mock_response({"data": {}})
+        self.client.cypher_query("MATCH (n) RETURN n", include_properties=False)
+        req = mock_urlopen.call_args[0][0]
+        body = json.loads(req.data.decode("utf-8"))
+        self.assertFalse(body["include_properties"])
+
+    @patch("bhopengraph.BloodHoundClient.urlopen")
+    def test_cypher_query_api_error(self, mock_urlopen):
+        from urllib.error import HTTPError
+
+        error = HTTPError(
+            "url",
+            400,
+            "Bad Request",
+            {},
+            MagicMock(read=MagicMock(return_value=b"invalid query")),
+        )
+        error.read = MagicMock(return_value=b"invalid query")
+        mock_urlopen.side_effect = error
+        with self.assertRaises(BloodHoundAPIError) as ctx:
+            self.client.cypher_query("INVALID CYPHER")
+        self.assertEqual(ctx.exception.status_code, 400)
+
+
 class TestBloodHoundClientUpload(unittest.TestCase):
     """Test bulk upload logic."""
 
@@ -374,11 +435,11 @@ class TestBloodHoundClientUpload(unittest.TestCase):
 
     @patch.object(BloodHoundClient, "update_custom_node")
     def test_upload_icons_updates_existing(self, mock_update):
-        mock_update.return_value = {"name": "AWSUser"}
+        mock_update.return_value = {"name": "AWS_User"}
         config = {
             "custom_nodes": [
                 {
-                    "kindName": "AWSUser",
+                    "kindName": "AWS_User",
                     "config": {
                         "icon": {
                             "type": "font-awesome",
@@ -399,11 +460,11 @@ class TestBloodHoundClientUpload(unittest.TestCase):
         mock_update.side_effect = BloodHoundAPIError(
             "Not found", status_code=404, response_body=""
         )
-        mock_create.return_value = {"name": "AWSUser"}
+        mock_create.return_value = {"name": "AWS_User"}
         config = {
             "custom_nodes": [
                 {
-                    "kindName": "AWSUser",
+                    "kindName": "AWS_User",
                     "config": {
                         "icon": {
                             "type": "font-awesome",
@@ -426,7 +487,7 @@ class TestBloodHoundClientUpload(unittest.TestCase):
         config = {
             "custom_nodes": [
                 {
-                    "kindName": "AWSUser",
+                    "kindName": "AWS_User",
                     "config": {"icon": {"type": "font-awesome", "name": "user"}},
                 }
             ]
