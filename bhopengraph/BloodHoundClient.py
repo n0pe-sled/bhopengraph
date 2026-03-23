@@ -121,7 +121,7 @@ class BloodHoundClient:
 
     def create_custom_node(self, kind_name: str, icon_config: dict) -> dict:
         """Create a new custom node type."""
-        payload = {"name": kind_name, "config": {"icon": icon_config}}
+        payload = {"kind_name": kind_name, "config": {"icon": icon_config}}
         return self._request("POST", "/api/v2/custom-nodes", body=payload)
 
     def update_custom_node(self, kind_name: str, icon_config: dict) -> dict:
